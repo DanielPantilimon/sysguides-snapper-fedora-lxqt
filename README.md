@@ -53,6 +53,7 @@ Works best with:
 ## 🚀 Installation
 
 ```bash
+sudo dnf install git -y
 git clone https://github.com/SysGuides/sysguides-snapper-fedora
 cd sysguides-snapper-fedora
 chmod +x install.sh
