@@ -31,7 +31,7 @@ if [[ $EUID -eq 0 ]]; then
 fi
 
 echo "[1/6] Installing required packages..."
-sudo dnf install -y snapper libdnf5-plugin-actions btrfs-assistant inotify-tools git make
+sudo dnf install -y snapper libdnf5-plugin-actions btrfs-assistant inotify-tools make
 
 # Check if system is using Btrfs
 if ! findmnt -n -o FSTYPE / | grep -q btrfs; then
