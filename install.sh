@@ -20,6 +20,8 @@
 # 
 # This fork has been Modified with AI to fully configure Snapper on Fedora 44 LXQt
 # Apart from the original btrfs partitioning, I have added the /.snapshots partition as part of the installation process
+# All credit goes to the Original Author: Madhu Desai (SysGuides)
+
 
 set -e
 
