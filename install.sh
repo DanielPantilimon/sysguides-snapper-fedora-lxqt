@@ -14,9 +14,12 @@
 # - Installs Snapper integration scripts (DNF5 actions)
 #
 # Project: sysguides-snapper-fedora
-# Author: Madhu Desai (SysGuides)
+# Original Author: Madhu Desai (SysGuides)
 # Website: https://sysguides.com
 # GitHub: https://github.com/SysGuides/sysguides-snapper-fedora
+# 
+# This fork has been Modified with AI to fully configure Snapper on Fedora 44 LXQt
+# Apart from the original btrfs partitioning, I have added the /.snapshots partition as part of the installation process
 
 set -e
 
@@ -31,7 +34,7 @@ if [[ $EUID -eq 0 ]]; then
 fi
 
 echo "[1/6] Installing required packages..."
-sudo dnf install -y snapper libdnf5-plugin-actions btrfs-assistant inotify-tools make
+sudo dnf install -y snapper libdnf5-plugin-actions btrfs-assistant inotify-tools make git
 
 # Check if system is using Btrfs
 if ! findmnt -n -o FSTYPE / | grep -q btrfs; then
@@ -41,21 +44,55 @@ fi
 
 echo "[2/6] Configuring Snapper..."
 
-# Create configs if not present
-[ -d /.snapshots ] || sudo snapper -c root create-config /
-[ -d /home/.snapshots ] || sudo snapper -c home create-config /home
+# --- SAFE WORKAROUND FOR PRE-EXISTING DEDICATED /.SNAPSHOTS ---
+if [ ! -f /etc/snapper/configs/root ]; then
+    echo "==> Handling dedicated /.snapshots mount for Snapper config..."
+    # If already mounted, unmount it temporarily so snapper can initialize
+    if findmnt / .snapshots > /dev/null; then
+        sudo umount /.snapshots
+    fi
+    
+    # Temporarily move the directory out of the way if it exists
+    if [ -d /.snapshots ]; then
+        sudo mv /.snapshots /.snapshots_bak
+    fi
+
+    # Create the config cleanly
+    sudo snapper -c root create-config /
+
+    # Remove the empty directory snapper made, and restore the original subvolume path
+    sudo rmdir /.snapshots
+    if [ -d /.snapshots_bak ]; then
+        sudo mv /.snapshots_bak /.snapshots
+    fi
+
+    # Remount the dedicated subvolume cleanly
+    sudo mount /.snapshots
+fi
+
+# Create home config if not present
+if [ ! -f /etc/snapper/configs/home ]; then
+    [ -d /home/.snapshots ] || sudo snapper -c home create-config /home
+fi
+# --------------------------------------------------------------
 
 # Fix SELinux contexts
+echo "==> Fixing SELinux contexts..."
 sudo restorecon -RFv /.snapshots
 sudo restorecon -RFv /home/.snapshots
 
 # Set permissions for current user
+echo "==> Setting permissions for current user and Btrfs Assistant..."
 REAL_USER=${SUDO_USER:-$USER}
 sudo snapper -c root set-config ALLOW_USERS=$REAL_USER SYNC_ACL=yes
 sudo snapper -c home set-config ALLOW_USERS=$REAL_USER SYNC_ACL=yes
 
 # Disable timeline snapshots for home
 sudo snapper -c home set-config TIMELINE_CREATE=no
+
+# Allow the wheels group (admin) access for Btrfs Assistant integration
+sudo chown -R :wheel /.snapshots
+sudo chmod 750 /.snapshots
 
 echo "[3/6] Updating locate database config..."
 
@@ -111,4 +148,6 @@ sudo systemctl enable --now snapper-cleanup.timer
 
 echo ""
 echo "✅ Installation complete!"
-echo "Snapper is now fully integrated with DNF5 (CLI + GUI)."
+echo "Snapper is now fully integrated with DNF5 CLI"
+echo "Open Btrfs Assistant from your LXQt applications menu to manage your layout visually!"
+
