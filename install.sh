@@ -46,36 +46,48 @@ fi
 
 echo "[2/6] Configuring Snapper..."
 
-# --- BULLETPROOF WORKAROUND FOR PRE-EXISTING DEDICATED /.SNAPSHOTS ---
+# --- BULLETPROOF WORKAROUND: MANUAL CONFIG INJECTION ---
+# We bypass "snapper create-config" entirely for root so we never have to unmount or move your partition!
 if [ ! -f /etc/snapper/configs/root ]; then
-    echo "==> Handling pre-existing /.snapshots mount for Snapper config..."
+    echo "==> Manually creating Snapper config to preserve your custom /.snapshots partition..."
     
-    # 1. Lazily unmount the dedicated partition to clear "Device or resource busy"
-    if findmnt / .snapshots > /dev/null; then
-        sudo umount -l /.snapshots || true
-    fi
+    sudo mkdir -p /etc/snapper/configs
     
-    # 2. Clear out the empty mount point directory so Snapper has a completely blank slate
-    if [ -d /.snapshots ]; then
-        sudo rmdir /.snapshots 2>/dev/null || sudo btrfs subvolume delete /.snapshots 2>/dev/null || true
+    sudo tee /etc/snapper/configs/root > /dev/null <<EOF
+SUBVOLUME="/"
+FSTYPE="btrfs"
+ALLOW_USERS=""
+ALLOW_GROUPS=""
+SYNC_ACL="no"
+BACKGROUND_COMPARISON="yes"
+NUMBER_CLEANUP="yes"
+NUMBER_MIN_AGE="1800"
+NUMBER_LIMIT="50"
+NUMBER_LIMIT_IMPORTANT="10"
+TIMELINE_CREATE="yes"
+TIMELINE_CLEANUP="yes"
+TIMELINE_MIN_AGE="1800"
+TIMELINE_LIMIT_HOURLY="10"
+TIMELINE_LIMIT_DAILY="10"
+TIMELINE_LIMIT_WEEKLY="0"
+TIMELINE_LIMIT_MONTHLY="0"
+TIMELINE_LIMIT_YEARLY="0"
+EMPTY_PRE_POST_CLEANUP="yes"
+EMPTY_PRE_POST_MIN_AGE="1800"
+EOF
+
+    # Register the config with Snapper
+    if [ -f /etc/sysconfig/snapper ]; then
+        if ! grep -q '\broot\b' /etc/sysconfig/snapper; then
+            sudo sed -i 's/SNAPPER_CONFIGS="\(.*\)"/SNAPPER_CONFIGS="\1 root"/g' /etc/sysconfig/snapper
+            sudo sed -i 's/SNAPPER_CONFIGS=" "/SNAPPER_CONFIGS="root"/g' /etc/sysconfig/snapper
+        fi
+    else
+        echo 'SNAPPER_CONFIGS="root"' | sudo tee /etc/sysconfig/snapper
     fi
-
-    # 3. Run snapper configuration (Snapper will create its own folder here)
-    sudo snapper -c root create-config /
-
-    # 4. Remove the default folder Snapper just generated to clear the path for your partition
-    if [ -d /.snapshots ]; then
-        sudo btrfs subvolume delete /.snapshots 2>/dev/null || sudo rmdir /.snapshots 2>/dev/null || true
-    fi
-
-    # 5. Re-create a clean, empty mount point folder
-    sudo mkdir -p /.snapshots
-
-    # 6. Remount your real, dedicated snapshots partition cleanly from /etc/fstab
-    sudo mount /.snapshots
 fi
 
-# Create home config if not present
+# Create home config if not present (the standard way since it's not a separate partition)
 if [ ! -f /etc/snapper/configs/home ]; then
     [ -d /home/.snapshots ] || sudo snapper -c home create-config /home
 fi
