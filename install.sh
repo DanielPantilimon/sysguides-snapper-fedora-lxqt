@@ -46,29 +46,32 @@ fi
 
 echo "[2/6] Configuring Snapper..."
 
-# --- SAFE WORKAROUND FOR PRE-EXISTING DEDICATED /.SNAPSHOTS ---
+# --- BULLETPROOF WORKAROUND FOR PRE-EXISTING DEDICATED /.SNAPSHOTS ---
 if [ ! -f /etc/snapper/configs/root ]; then
-    echo "==> Handling dedicated /.snapshots mount for Snapper config..."
-    # If already mounted, unmount it temporarily so snapper can initialize
+    echo "==> Handling pre-existing /.snapshots mount for Snapper config..."
+    
+    # 1. Lazily unmount the dedicated partition to clear "Device or resource busy"
     if findmnt / .snapshots > /dev/null; then
-        sudo umount /.snapshots
+        sudo umount -l /.snapshots || true
     fi
     
-    # Temporarily move the directory out of the way if it exists
+    # 2. Clear out the empty mount point directory so Snapper has a completely blank slate
     if [ -d /.snapshots ]; then
-        sudo mv /.snapshots /.snapshots_bak
+        sudo rmdir /.snapshots 2>/dev/null || sudo btrfs subvolume delete /.snapshots 2>/dev/null || true
     fi
 
-    # Create the config cleanly
+    # 3. Run snapper configuration (Snapper will create its own folder here)
     sudo snapper -c root create-config /
 
-    # Remove the empty directory snapper made, and restore the original subvolume path
-    sudo rmdir /.snapshots
-    if [ -d /.snapshots_bak ]; then
-        sudo mv /.snapshots_bak /.snapshots
+    # 4. Remove the default folder Snapper just generated to clear the path for your partition
+    if [ -d /.snapshots ]; then
+        sudo btrfs subvolume delete /.snapshots 2>/dev/null || sudo rmdir /.snapshots 2>/dev/null || true
     fi
 
-    # Remount the dedicated subvolume cleanly
+    # 5. Re-create a clean, empty mount point folder
+    sudo mkdir -p /.snapshots
+
+    # 6. Remount your real, dedicated snapshots partition cleanly from /etc/fstab
     sudo mount /.snapshots
 fi
 
@@ -76,7 +79,7 @@ fi
 if [ ! -f /etc/snapper/configs/home ]; then
     [ -d /home/.snapshots ] || sudo snapper -c home create-config /home
 fi
-# --------------------------------------------------------------
+# ---------------------------------------------------------------------
 
 # Fix SELinux contexts
 echo "==> Fixing SELinux contexts..."
